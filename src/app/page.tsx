@@ -23,6 +23,8 @@ interface CustomNode extends RFNode {
     onAdd?: (nodeId: string) => void;
     onDelete?: (nodeId: string) => void;
     onSuggest?: (nodeId: string) => void;
+    onSelectSuggestion?: (nodeId: string, suggestion: string) => void;
+    activeSuggestion?: string[];
   };
 }
 
@@ -104,7 +106,7 @@ const aiButtonStyle: React.CSSProperties = {
   color: "#fff",
 };
 
-// Custom node component với 4 nút hành động
+// Custom node component với 4 nút hành động và dropdown cho gợi ý AI
 const CustomNodeComponent = ({ id, data }: NodeProps) => {
   const handleEdit = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -152,6 +154,38 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
           AI
         </button>
       </div>
+      {/* Nếu có activeSuggestion, hiển thị dropdown ngay dưới nút AI */}
+      {data.activeSuggestion && data.activeSuggestion.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 2px)",
+            right: "2px",
+            background: "#fff",
+            border: "1px solid #ddd",
+            borderRadius: "3px",
+            zIndex: 1000,
+          }}
+        >
+          {data.activeSuggestion.map((suggestion: string, index: number) => (
+            <div
+              key={index}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (data.onSelectSuggestion) data.onSelectSuggestion(id, suggestion);
+              }}
+              style={{
+                padding: "4px",
+                cursor: "pointer",
+                fontSize: "10px",
+                borderBottom: "1px solid #eee",
+              }}
+            >
+              {suggestion}
+            </div>
+          ))}
+        </div>
+      )}
       <Handle type="target" position={Position.Left} style={{ background: "#555" }} />
       <Handle type="source" position={Position.Right} style={{ background: "#555" }} />
     </div>
@@ -163,6 +197,10 @@ const nodeTypes = { custom: CustomNodeComponent };
 const MindMapFlow = () => {
   const [nodes, setNodes] = useState<CustomNode[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
+  // activeSuggestions lưu thông tin của node hiện tại có dropdown gợi ý
+  const [activeSuggestions, setActiveSuggestions] = useState<
+    { nodeId: string; suggestions: string[] } | null
+  >(null);
 
   // Tính chuỗi branch từ node được chọn
   const computeBranch = (nodeId: string): string => {
@@ -248,17 +286,6 @@ const MindMapFlow = () => {
     );
   };
 
-  // Hàm parse danh sách gợi ý từ văn bản trả về của LLM
-  const parseSuggestions = (text: string): string[] => {
-    const regex = /\*\*(.+?)\*\*/g;
-    const matches: string[] = [];
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-      matches.push(match[1].replace(/:/g, "").trim());
-    }
-    return matches;
-  };
-
   // Hàm gọi API LLM để gợi ý node con
   const handleSuggestChildForNode = async (nodeId: string) => {
     const branch = computeBranch(nodeId);
@@ -310,35 +337,41 @@ Now, generate the list of child nodes based on the branch: "${branch}".
         console.warn("Không có dữ liệu gợi ý từ API");
         return;
       }
-      const suggestionList = parseSuggestions(suggestionsText);
+      const regex = /\*\*(.+?)\*\*/g;
+      const suggestionList: string[] = [];
+      let match;
+      while ((match = regex.exec(suggestionsText)) !== null) {
+        suggestionList.push(match[1].replace(/:/g, "").trim());
+      }
       console.log("Danh sách gợi ý:", suggestionList);
       if (suggestionList.length > 0) {
-        const selectedSuggestion = window.prompt(
-          "Gợi ý: " +
-            suggestionList.join(", ") +
-            "\nNhập lựa chọn để thêm node con:"
-        );
-        if (selectedSuggestion && suggestionList.includes(selectedSuggestion)) {
-          const parentNode = nodes.find((n) => n.id === nodeId);
-          if (!parentNode) return;
-          const newId = Date.now().toString();
-          const newNode: CustomNode = {
-            id: newId,
-            type: "custom",
-            data: { label: selectedSuggestion, parentId: parentNode.id },
-            position: { x: 0, y: 0 },
-          };
-          const newNodes = recalcLayout([...nodes, newNode]);
-          setNodes(newNodes);
-          setEdges((prev) => [
-            ...prev,
-            { id: `${parentNode.id}-${newId}`, source: parentNode.id, target: newId },
-          ]);
-        }
+        // Thay vì gọi prompt, hiển thị dropdown gợi ý cho node này
+        setActiveSuggestions({ nodeId, suggestions: suggestionList });
       }
     } catch (error) {
       console.error("Lỗi khi gọi API LLM:", error);
     }
+  };
+
+  // Hàm xử lý khi người dùng chọn gợi ý từ dropdown
+  const handleSelectSuggestionForNode = (nodeId: string, suggestion: string) => {
+    const parentNode = nodes.find((n) => n.id === nodeId);
+    if (!parentNode) return;
+    const newId = Date.now().toString();
+    const newNode: CustomNode = {
+      id: newId,
+      type: "custom",
+      data: { label: suggestion, parentId: parentNode.id },
+      position: { x: 0, y: 0 },
+    };
+    const newNodes = recalcLayout([...nodes, newNode]);
+    setNodes(newNodes);
+    setEdges((prev) => [
+      ...prev,
+      { id: `${parentNode.id}-${newId}`, source: parentNode.id, target: newId },
+    ]);
+    // Sau khi chọn, xóa dropdown gợi ý
+    setActiveSuggestions(null);
   };
 
   // Nếu mindmap rỗng, hiển thị nút "+" ở giữa màn hình để thêm node gốc
@@ -355,7 +388,7 @@ Now, generate the list of child nodes based on the branch: "${branch}".
     setEdges([]);
   };
 
-  // Thêm các hàm hành động vào data của node
+  // Thêm các hàm hành động vào data của node, và nếu node có gợi ý đang active thì truyền vào
   const enhancedNodes = nodes.map((n) => ({
     ...n,
     type: "custom",
@@ -365,6 +398,11 @@ Now, generate the list of child nodes based on the branch: "${branch}".
       onAdd: handleAddChildForNode,
       onDelete: handleDeleteNodeForNode,
       onSuggest: handleSuggestChildForNode,
+      onSelectSuggestion: handleSelectSuggestionForNode,
+      activeSuggestion:
+        activeSuggestions && activeSuggestions.nodeId === n.id
+          ? activeSuggestions.suggestions
+          : undefined,
     },
   }));
 
