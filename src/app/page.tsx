@@ -103,7 +103,8 @@ const aiButtonStyle: React.CSSProperties = {
   color: "#fff",
 };
 
-// Custom node component với nút hành động và dropdown gợi ý AI đa chức năng
+// Custom node component (nội dung bên trong node)
+// Lưu ý: không gán thêm class "has-dropdown" ở đây
 const CustomNodeComponent = ({ id, data }: NodeProps) => {
   const [selectedSuggestions, setSelectedSuggestions] = useState<string[]>([]);
 
@@ -151,6 +152,7 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
 
   return (
     <div
+      className="custom-node"
       style={{
         padding: "10px",
         border: "1px solid #ddd",
@@ -160,7 +162,7 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
         minWidth: "140px",
       }}
     >
-      <div style={{ fontWeight: 'bold', color: 'black' }}>{data.label}</div>
+      <div style={{ fontWeight: "bold", color: "black" }}>{data.label}</div>
       <div style={buttonContainerStyle}>
         <button onClick={handleEdit} style={editButtonStyle}>
           Sửa
@@ -185,7 +187,7 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
             background: "#fff",
             border: "1px solid #ddd",
             borderRadius: "3px",
-            zIndex: 99999, // Tăng z-index lên giá trị cực cao
+            zIndex: 99999,
             padding: "4px",
           }}
         >
@@ -526,24 +528,25 @@ Please provide a concise summary in Vietnamese.
     }
   };
 
-  // Thêm các hàm hành động vào data của node
-  const enhancedNodes = nodes.map((n) => ({
-    ...n,
-    type: "custom",
-    data: {
-      ...n.data,
-      onEdit: handleEditNodeForNode,
-      onAdd: handleAddChildForNode,
-      onDelete: handleDeleteNodeForNode,
-      onSuggest: handleSuggestChildForNode,
-      onApplySuggestions: handleApplySuggestionsForNode,
-      onCancelSuggestions: handleCancelSuggestionsForNode,
-      activeSuggestion:
-        activeSuggestions && activeSuggestions.nodeId === n.id
-          ? activeSuggestions.suggestions
-          : undefined,
-    },
-  }));
+  // Thêm các hàm hành động vào data của node và gán class cho outer container nếu cần
+  const enhancedNodes = nodes.map((n) => {
+    const isActive = activeSuggestions && activeSuggestions.nodeId === n.id;
+    return {
+      ...n,
+      type: "custom",
+      className: isActive ? "has-dropdown" : "",
+      data: {
+        ...n.data,
+        onEdit: handleEditNodeForNode,
+        onAdd: handleAddChildForNode,
+        onDelete: handleDeleteNodeForNode,
+        onSuggest: handleSuggestChildForNode,
+        onApplySuggestions: handleApplySuggestionsForNode,
+        onCancelSuggestions: handleCancelSuggestionsForNode,
+        activeSuggestion: isActive ? activeSuggestions!.suggestions : undefined,
+      },
+    };
+  });
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
@@ -560,7 +563,7 @@ Please provide a concise summary in Vietnamese.
         <textarea
           value={summaryText}
           readOnly
-          style={{ width: "100%", height: "90%", resize: "none", fontWeight: 'bold', color: 'black' }}
+          style={{ width: "100%", height: "90%", resize: "none", fontWeight: "bold", color: "black" }}
         />
       </div>
       {/* Container chứa ReactFlow và thanh công cụ */}
