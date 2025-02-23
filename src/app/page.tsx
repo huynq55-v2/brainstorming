@@ -23,7 +23,6 @@ interface CustomNode extends RFNode {
     onAdd?: (nodeId: string) => void;
     onDelete?: (nodeId: string) => void;
     onSuggest?: (nodeId: string) => void;
-    // Các callback mới cho tính năng multi-select gợi ý
     onApplySuggestions?: (nodeId: string, suggestions: string[]) => void;
     onCancelSuggestions?: (nodeId: string) => void;
     activeSuggestion?: string[];
@@ -80,28 +79,24 @@ const buttonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-// Nút Sửa node (màu vàng)
 const editButtonStyle: React.CSSProperties = {
   ...buttonStyle,
   backgroundColor: "#FFC107",
   color: "#fff",
 };
 
-// Nút Thêm node con (màu xanh lá)
 const addButtonStyle: React.CSSProperties = {
   ...buttonStyle,
   backgroundColor: "#4CAF50",
   color: "#fff",
 };
 
-// Nút Xoá node (màu đỏ)
 const deleteButtonStyle: React.CSSProperties = {
   ...buttonStyle,
   backgroundColor: "#F44336",
   color: "#fff",
 };
 
-// Nút Gợi ý AI (màu xanh dương)
 const aiButtonStyle: React.CSSProperties = {
   ...buttonStyle,
   backgroundColor: "#2196F3",
@@ -110,7 +105,6 @@ const aiButtonStyle: React.CSSProperties = {
 
 // Custom node component với nút hành động và dropdown gợi ý AI đa chức năng
 const CustomNodeComponent = ({ id, data }: NodeProps) => {
-  // State lưu các suggestion đã được chọn
   const [selectedSuggestions, setSelectedSuggestions] = useState<string[]>([]);
 
   const handleEdit = (event: React.MouseEvent) => {
@@ -133,7 +127,6 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
     if (data.onSuggest) data.onSuggest(id);
   };
 
-  // Toggle chọn/mở bỏ chọn suggestion
   const toggleSelection = (suggestion: string) => {
     setSelectedSuggestions((prev) =>
       prev.includes(suggestion)
@@ -192,7 +185,7 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
             background: "#fff",
             border: "1px solid #ddd",
             borderRadius: "3px",
-            zIndex: 9999, // đảm bảo luôn hiển thị trên cùng
+            zIndex: 9999,
             padding: "4px",
           }}
         >
@@ -217,7 +210,6 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
               </div>
             );
           })}
-          {/* Các nút hành động cho dropdown */}
           <div
             style={{
               display: "flex",
@@ -264,11 +256,10 @@ const nodeTypes = { custom: CustomNodeComponent };
 const MindMapFlow = () => {
   const [nodes, setNodes] = useState<CustomNode[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
-  // activeSuggestions lưu thông tin của node có dropdown gợi ý
   const [activeSuggestions, setActiveSuggestions] = useState<
     { nodeId: string; suggestions: string[] } | null
   >(null);
-
+  const [summaryText, setSummaryText] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Tính chuỗi branch từ node được chọn
@@ -375,7 +366,7 @@ Your task is to generate a list of relevant child nodes that logically extend th
 - The output **MUST NOT** contain colons or any extra symbols.
 
 Now, generate the list of child nodes based on the branch: "${branch}".
-        `;
+    `;
     console.log("Prompt gửi đi:", promptText);
     try {
       const response = await fetch(
@@ -384,11 +375,7 @@ Now, generate the list of child nodes based on the branch: "${branch}".
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text: promptText }],
-              },
-            ],
+            contents: [{ parts: [{ text: promptText }] }],
           }),
         }
       );
@@ -414,7 +401,6 @@ Now, generate the list of child nodes based on the branch: "${branch}".
       }
       console.log("Danh sách gợi ý:", suggestionList);
       if (suggestionList.length > 0) {
-        // Hiển thị dropdown gợi ý cho node này
         setActiveSuggestions({ nodeId, suggestions: suggestionList });
       }
     } catch (error) {
@@ -448,7 +434,7 @@ Now, generate the list of child nodes based on the branch: "${branch}".
     setActiveSuggestions(null);
   };
 
-  // Nếu mind map rỗng, hiển thị nút "+" ở giữa màn hình để thêm node gốc
+  // Hàm tạo node gốc khi mind map rỗng
   const handleAddRoot = () => {
     const label = window.prompt("Nhập nhãn cho node gốc:");
     if (!label) return;
@@ -503,7 +489,44 @@ Now, generate the list of child nodes based on the branch: "${branch}".
     reader.readAsText(file);
   };
 
-  // Thêm các hàm hành động vào data của node, đồng thời truyền activeSuggestion nếu có
+  // Hàm gọi API LLM để tóm tắt mind map (gửi toàn bộ JSON)
+  const handleSummarizeMindMap = async () => {
+    const mindMapData = { nodes, edges };
+    const promptText = `
+You are an AI assistant specialized in summarizing mind maps.
+The following is the JSON data of a mind map:
+${JSON.stringify(mindMapData, null, 2)}
+Please provide a concise summary in Vietnamese.
+    `;
+    console.log("Prompt tóm tắt:", promptText);
+    try {
+      const response = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyBifaWH4R8VeJ9WyxqyRnP33lsSNCkv0Zc",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }] }],
+          }),
+        }
+      );
+      if (!response.ok) {
+        console.error("API trả về lỗi, status:", response.status);
+        return;
+      }
+      const data = await response.json();
+      console.log("Response tóm tắt:", data);
+      const summary =
+        data.candidates && data.candidates[0]?.content?.parts[0]?.text
+          ? data.candidates[0].content.parts[0].text
+          : "";
+      setSummaryText(summary);
+    } catch (error) {
+      console.error("Lỗi khi gọi API LLM tóm tắt:", error);
+    }
+  };
+
+  // Thêm các hàm hành động vào data của node
   const enhancedNodes = nodes.map((n) => ({
     ...n,
     type: "custom",
@@ -523,72 +546,108 @@ Now, generate the list of child nodes based on the branch: "${branch}".
   }));
 
   return (
-    <div style={{ height: "100vh", position: "relative" }}>
-      {/* Nút Lưu và Tải mind map */}
+    <div style={{ display: "flex", height: "100vh" }}>
+      {/* Sidebar chứa nội dung tóm tắt */}
       <div
         style={{
-          position: "absolute",
-          top: "10px",
-          right: "10px",
-          zIndex: 1000,
-          display: "flex",
-          gap: "10px",
+          width: "250px",
+          borderRight: "1px solid #ddd",
+          padding: "10px",
+          overflowY: "auto",
         }}
       >
-        <button
-          onClick={handleSaveMindMap}
-          style={{
-            padding: "6px 12px",
-            borderRadius: "4px",
-            border: "none",
-            backgroundColor: "#007bff",
-            color: "#fff",
-          }}
-        >
-          Lưu
-        </button>
-        <button
-          onClick={handleLoadMindMap}
-          style={{
-            padding: "6px 12px",
-            borderRadius: "4px",
-            border: "none",
-            backgroundColor: "#28a745",
-            color: "#fff",
-          }}
-        >
-          Tải
-        </button>
-        {/* Input file ẩn để tải mind map */}
-        <input
-          type="file"
-          accept=".json"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          style={{ display: "none" }}
+        <h4>Tóm tắt MindMap</h4>
+        <textarea
+          value={summaryText}
+          readOnly
+          style={{ width: "100%", height: "90%", resize: "none" }}
         />
       </div>
-      <ReactFlowProvider>
-        <ReactFlow nodes={enhancedNodes} edges={edges} nodeTypes={nodeTypes} fitView>
-          <MiniMap />
-          <Controls />
-          <Background />
-        </ReactFlow>
-        {nodes.length === 0 && (
-          <div
+      {/* Container chứa ReactFlow và thanh công cụ */}
+      <div style={{ flex: 1, position: "relative" }}>
+        {/* Thanh công cụ: Lưu, Tải, Tóm tắt */}
+        <div
+          style={{
+            position: "absolute",
+            top: "10px",
+            right: "10px",
+            zIndex: 1000,
+            display: "flex",
+            gap: "10px",
+          }}
+        >
+          <button
+            onClick={handleSaveMindMap}
             style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
+              padding: "6px 12px",
+              borderRadius: "4px",
+              border: "none",
+              backgroundColor: "#007bff",
+              color: "#fff",
             }}
           >
-            <button onClick={handleAddRoot} style={{ fontSize: "24px", padding: "10px 20px" }}>
-              +
-            </button>
-          </div>
-        )}
-      </ReactFlowProvider>
+            Lưu
+          </button>
+          <button
+            onClick={handleLoadMindMap}
+            style={{
+              padding: "6px 12px",
+              borderRadius: "4px",
+              border: "none",
+              backgroundColor: "#28a745",
+              color: "#fff",
+            }}
+          >
+            Tải
+          </button>
+          <button
+            onClick={handleSummarizeMindMap}
+            style={{
+              padding: "6px 12px",
+              borderRadius: "4px",
+              border: "none",
+              backgroundColor: "#9C27B0",
+              color: "#fff",
+            }}
+          >
+            Tóm tắt
+          </button>
+          {/* Input file ẩn để tải mind map */}
+          <input
+            type="file"
+            accept=".json"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            style={{ display: "none" }}
+          />
+        </div>
+        <ReactFlowProvider>
+          <ReactFlow
+            nodes={enhancedNodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            fitView
+          >
+            <MiniMap />
+            <Controls />
+            <Background />
+          </ReactFlow>
+          {nodes.length === 0 && (
+            <div
+              style={{
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%, -50%)",
+              }}
+            >
+              <button onClick={handleAddRoot} style={{ fontSize: "24px", padding: "10px 20px" }}>
+                +
+              </button>
+            </div>
+          )}
+        </ReactFlowProvider>
+      </div>
     </div>
   );
 };
