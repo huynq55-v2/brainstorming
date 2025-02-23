@@ -160,7 +160,7 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
         minWidth: "140px",
       }}
     >
-      <div>{data.label}</div>
+      <div style={{ fontWeight: 'bold', color: 'black' }}>{data.label}</div>
       <div style={buttonContainerStyle}>
         <button onClick={handleEdit} style={editButtonStyle}>
           Sửa
@@ -185,7 +185,7 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
             background: "#fff",
             border: "1px solid #ddd",
             borderRadius: "3px",
-            zIndex: 9999,
+            zIndex: 99999, // Tăng z-index lên giá trị cực cao
             padding: "4px",
           }}
         >
@@ -560,7 +560,7 @@ Please provide a concise summary in Vietnamese.
         <textarea
           value={summaryText}
           readOnly
-          style={{ width: "100%", height: "90%", resize: "none" }}
+          style={{ width: "100%", height: "90%", resize: "none", fontWeight: 'bold', color: 'black' }}
         />
       </div>
       {/* Container chứa ReactFlow và thanh công cụ */}
