@@ -24,11 +24,35 @@ const initialNodes: CustomNode[] = [
     {
         id: "1",
         data: { label: "MindMap Root" },
-        position: { x: 250, y: 50 },
+        position: { x: 50, y: 50 },
     },
 ];
 
 const initialEdges: Edge[] = [];
+
+// Hàm sắp xếp lại vị trí các node (layout) để tránh bị chồng lên nhau
+const recalcLayout = (nodes: CustomNode[]): CustomNode[] => {
+    const horizontalGap = 200;
+    const verticalGap = 80;
+    let currentY = 50; // Bắt đầu từ y = 50
+    // Tạo bản sao của nodes để không làm thay đổi state gốc
+    const newNodes = nodes.map(n => ({ ...n, position: { ...n.position } }));
+    
+    const layout = (node: CustomNode, depth: number) => {
+        node.position.x = 50 + depth * horizontalGap;
+        node.position.y = currentY;
+        currentY += verticalGap;
+        // Lấy danh sách các node con của node hiện tại
+        const children = newNodes.filter(n => n.data.parentId === node.id);
+        children.sort((a, b) => a.id.localeCompare(b.id));
+        children.forEach(child => layout(child, depth + 1));
+    };
+    // Lấy danh sách các node gốc (không có parentId)
+    const roots = newNodes.filter(n => !n.data.parentId);
+    roots.sort((a, b) => a.id.localeCompare(b.id));
+    roots.forEach(root => layout(root, 0));
+    return newNodes;
+};
 
 const MindMapFlow = () => {
     const [nodes, setNodes] = useState<CustomNode[]>(initialNodes);
@@ -38,11 +62,11 @@ const MindMapFlow = () => {
     const [childText, setChildText] = useState("");
     const [suggestions, setSuggestions] = useState<string[]>([]);
 
-    // Khi người dùng click vào node, lưu lại node được chọn và cập nhật giá trị edit
+    // Khi người dùng click vào node, lưu lại node được chọn và cập nhật giá trị chỉnh sửa
     const onNodeClick = useCallback((event: React.MouseEvent, node: CustomNode) => {
         setSelectedNodeId(node.id);
         setEditLabel(node.data.label);
-        setSuggestions([]); // reset gợi ý khi chọn node mới
+        setSuggestions([]); // Reset gợi ý khi chọn node mới
     }, []);
 
     // Hàm tính chuỗi branch từ node được chọn (từ gốc đến node hiện tại)
@@ -57,13 +81,32 @@ const MindMapFlow = () => {
         return branch.join(" -> ");
     };
 
+    // Xây dựng chuỗi thể hiện toàn bộ mindmap theo cấu trúc cây
+    const buildMindMapString = (): string => {
+        const buildTree = (node: CustomNode, indent: string): string => {
+            let result = indent + node.data.label + "\n";
+            const children = nodes.filter(n => n.data.parentId === node.id);
+            children.sort((a, b) => a.id.localeCompare(b.id));
+            children.forEach(child => {
+                result += buildTree(child, indent + "  ");
+            });
+            return result;
+        };
+        let mindMapStr = "";
+        const roots = nodes.filter(n => !n.data.parentId);
+        roots.sort((a, b) => a.id.localeCompare(b.id));
+        roots.forEach(root => {
+            mindMapStr += buildTree(root, "");
+        });
+        return mindMapStr;
+    };
+
     // Cập nhật nhãn của node đã chọn
     const handleUpdateLabel = () => {
-        setNodes((prev) =>
-            prev.map((n) =>
-                n.id === selectedNodeId ? { ...n, data: { ...n.data, label: editLabel } } : n
-            )
+        const updatedNodes = nodes.map((n) =>
+            n.id === selectedNodeId ? { ...n, data: { ...n.data, label: editLabel } } : n
         );
+        setNodes(recalcLayout(updatedNodes));
     };
 
     // Thêm node con mới cho node đã chọn
@@ -71,15 +114,15 @@ const MindMapFlow = () => {
         if (!selectedNodeId) return;
         const parentNode = nodes.find((n) => n.id === selectedNodeId);
         if (!parentNode) return;
-        // Tính số lượng node con hiện có để tính vị trí node con mới
-        const childCount = nodes.filter((n) => n.data.parentId === parentNode.id).length;
+        // Tạo node con mới với vị trí tạm thời (sẽ được tính lại trong layout)
         const newId = Date.now().toString();
         const newNode: CustomNode = {
             id: newId,
             data: { label, parentId: parentNode.id },
-            position: { x: parentNode.position.x + 200, y: parentNode.position.y + (childCount + 1) * 80 },
+            position: { x: 0, y: 0 },
         };
-        setNodes((prev) => [...prev, newNode]);
+        const newNodes = recalcLayout([...nodes, newNode]);
+        setNodes(newNodes);
         setEdges((prev) => [
             ...prev,
             { id: `${parentNode.id}-${newId}`, source: parentNode.id, target: newId },
@@ -93,20 +136,21 @@ const MindMapFlow = () => {
         const matches: string[] = [];
         let match;
         while ((match = regex.exec(text)) !== null) {
-          matches.push(match[1].replace(/:/g, "").trim()); // Xóa dấu ":" nếu có
+            matches.push(match[1].replace(/:/g, "").trim()); // Xóa dấu ":" nếu có
         }
         return matches;
-      };      
+    };
 
     const handleSuggestChild = async () => {
         if (!selectedNodeId) return;
         const branch = computeBranch(selectedNodeId);
-        // Gửi toàn bộ chuỗi branch, bao gồm cả ký tự "->"
-        // Và lưu ý rằng node gốc là node đầu tiên trong chuỗi (ví dụ: "Ha Noi")
+        const mindMapStructure = buildMindMapString();
         const prompt = `
-      You are an AI assistant specializing in generating hierarchical mind map suggestions.
+You are an AI assistant specializing in generating hierarchical mind map suggestions.
 
 The current branch is: "${branch}".
+The entire mind map is as follows:
+${mindMapStructure}
 The root node is the first element in this branch (which is "${branch.split(" -> ")[0]}").
 
 Your task is to generate a list of relevant child nodes that logically extend this topic.
@@ -178,7 +222,8 @@ Now, generate the list of child nodes based on the branch: "${branch}".
             return ids;
         };
         const idsToDelete = getSubtreeIds(selectedNodeId);
-        setNodes((prev) => prev.filter((n) => !idsToDelete.includes(n.id)));
+        const newNodes = recalcLayout(nodes.filter((n) => !idsToDelete.includes(n.id)));
+        setNodes(newNodes);
         setEdges((prev) =>
             prev.filter((e) => !idsToDelete.includes(e.source) && !idsToDelete.includes(e.target))
         );
