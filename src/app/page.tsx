@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from "react";
+import React, { useState, useRef, ChangeEvent } from "react";
 import ReactFlow, {
   ReactFlowProvider,
   MiniMap,
@@ -202,6 +202,9 @@ const MindMapFlow = () => {
     { nodeId: string; suggestions: string[] } | null
   >(null);
 
+  // Tham chiếu cho input file dùng để tải mind map
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Tính chuỗi branch từ node được chọn
   const computeBranch = (nodeId: string): string => {
     let branch: string[] = [];
@@ -388,6 +391,47 @@ Now, generate the list of child nodes based on the branch: "${branch}".
     setEdges([]);
   };
 
+  // Hàm Lưu mind map: tạo file JSON tải xuống
+  const handleSaveMindMap = () => {
+    const data = { nodes, edges };
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "mindmap.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Hàm Tải mind map: mở hộp thoại chọn file và cập nhật state
+  const handleLoadMindMap = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const result = e.target?.result;
+        if (typeof result === "string") {
+          const data = JSON.parse(result);
+          if (data.nodes && data.edges) {
+            setNodes(recalcLayout(data.nodes));
+            setEdges(data.edges);
+          } else {
+            alert("File không hợp lệ.");
+          }
+        }
+      } catch (err) {
+        alert("Không thể tải file.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   // Thêm các hàm hành động vào data của node, và nếu node có gợi ý đang active thì truyền vào
   const enhancedNodes = nodes.map((n) => ({
     ...n,
@@ -408,6 +452,17 @@ Now, generate the list of child nodes based on the branch: "${branch}".
 
   return (
     <div style={{ height: "100vh", position: "relative" }}>
+      {/* Nút Lưu và Tải mind map */}
+      <div style={{ position: "absolute", top: "10px", right: "10px", zIndex: 1000, display: "flex", gap: "10px" }}>
+        <button onClick={handleSaveMindMap} style={{ padding: "6px 12px", borderRadius: "4px", border: "none", backgroundColor: "#007bff", color: "#fff" }}>
+          Lưu
+        </button>
+        <button onClick={handleLoadMindMap} style={{ padding: "6px 12px", borderRadius: "4px", border: "none", backgroundColor: "#28a745", color: "#fff" }}>
+          Tải
+        </button>
+        {/* Input file ẩn để tải mind map */}
+        <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileChange} style={{ display: "none" }} />
+      </div>
       <ReactFlowProvider>
         <ReactFlow nodes={enhancedNodes} edges={edges} nodeTypes={nodeTypes} fitView>
           <MiniMap />
