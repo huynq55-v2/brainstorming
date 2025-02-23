@@ -10,9 +10,6 @@ const GEMINI_API_KEY = "AIzaSyBifaWH4R8VeJ9WyxqyRnP33lsSNCkv0Zc"; // Replace wit
 // Tạo Context để quản lý state toàn cục
 const IdeaContext = createContext(null);
 
-/**
- * Hàm sắp xếp các node theo dạng cây (tree layout) với các cấp từ trên xuống dưới.
- */
 const treeLayout = (
   entities: { id: string; label: string }[],
   connections: { id: string; source: string; target: string }[]
@@ -37,13 +34,24 @@ const treeLayout = (
   // Xác định các node gốc (không có cha)
   const roots = entities.filter(entity => !parentMap.has(entity.id));
 
+  // Nếu có nhiều hơn 1 root, chọn root đầu tiên và gán cho các root khác kết nối từ root đầu tiên
+  if (roots.length > 1) {
+    const primaryRoot = roots[0];
+    roots.slice(1).forEach(secondaryRoot => {
+      parentMap.set(secondaryRoot.id, primaryRoot.id);
+      if (!childrenMap.has(primaryRoot.id)) {
+        childrenMap.set(primaryRoot.id, []);
+      }
+      childrenMap.get(primaryRoot.id).push(secondaryRoot.id);
+    });
+  }
+
   // Gán cấp (level) cho các node theo BFS
   const levelMap = new Map<string, number>();
   const queue: string[] = [];
-  roots.forEach(root => {
-    levelMap.set(root.id, 0);
-    queue.push(root.id);
-  });
+  const root = entities.find(entity => !parentMap.has(entity.id)) || roots[0];
+  levelMap.set(root.id, 0);
+  queue.push(root.id);
   while (queue.length > 0) {
     const nodeId = queue.shift();
     const level = levelMap.get(nodeId);
@@ -73,7 +81,6 @@ const treeLayout = (
     const level = parseInt(levelKey);
     const nodesAtLevel = levels[level];
     const count = nodesAtLevel.length;
-    // Tính toán khoảng cách theo chiều ngang sao cho các node được chia đều
     nodesAtLevel.forEach((nodeId, index) => {
       const margin = canvasWidth / (count + 1);
       const x = margin * (index + 1);
@@ -111,7 +118,7 @@ const IdeaProvider = ({ children }: { children: React.ReactNode }) => {
 2. Organize Ideas into a Mind Map: Analyze the provided list of ideas and generate a simple mind map.
    - Extract abstract ENTITIES representing the core concepts from the ideas. Each ENTITY should have an 'id' and a 'label'.
    - Connect these entities to show associations. Represent these connections as objects with an 'id', 'source' (entity id), and 'target' (entity id). Do not include any relationship type.
-   - **Ensure that the mind map does not include any loop connections (where the source and target are the same) and that each child node has only one parent. If multiple parent connections exist for a single node, include only the first connection.**
+   - **Ensure that the mind map does not include any loop connections (where the source and target are the same) and that each child node has only one parent. If multiple parent connections exist for a single node, include only the first connection. Additionally, ensure that there is only one root entity (i.e. only one entity without a parent).**
 
 Return the result in JSON format with the following structure:
 {
