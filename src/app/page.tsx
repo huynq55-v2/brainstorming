@@ -23,7 +23,9 @@ interface CustomNode extends RFNode {
     onAdd?: (nodeId: string) => void;
     onDelete?: (nodeId: string) => void;
     onSuggest?: (nodeId: string) => void;
-    onSelectSuggestion?: (nodeId: string, suggestion: string) => void;
+    // Các callback mới cho tính năng multi-select gợi ý
+    onApplySuggestions?: (nodeId: string, suggestions: string[]) => void;
+    onCancelSuggestions?: (nodeId: string) => void;
     activeSuggestion?: string[];
   };
 }
@@ -106,8 +108,11 @@ const aiButtonStyle: React.CSSProperties = {
   color: "#fff",
 };
 
-// Custom node component với 4 nút hành động và dropdown cho gợi ý AI
+// Custom node component với nút hành động và dropdown gợi ý AI đa chức năng
 const CustomNodeComponent = ({ id, data }: NodeProps) => {
+  // State lưu các suggestion đã được chọn
+  const [selectedSuggestions, setSelectedSuggestions] = useState<string[]>([]);
+
   const handleEdit = (event: React.MouseEvent) => {
     event.stopPropagation();
     if (data.onEdit) data.onEdit(id);
@@ -126,6 +131,29 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
   const handleSuggest = (event: React.MouseEvent) => {
     event.stopPropagation();
     if (data.onSuggest) data.onSuggest(id);
+  };
+
+  // Toggle chọn/mở bỏ chọn suggestion
+  const toggleSelection = (suggestion: string) => {
+    setSelectedSuggestions((prev) =>
+      prev.includes(suggestion)
+        ? prev.filter((s) => s !== suggestion)
+        : [...prev, suggestion]
+    );
+  };
+
+  const handleCancel = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setSelectedSuggestions([]);
+    if (data.onCancelSuggestions) data.onCancelSuggestions(id);
+  };
+
+  const handleApply = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (data.onApplySuggestions) {
+      data.onApplySuggestions(id, selectedSuggestions);
+    }
+    setSelectedSuggestions([]);
   };
 
   return (
@@ -154,7 +182,7 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
           AI
         </button>
       </div>
-      {/* Nếu có activeSuggestion, hiển thị dropdown ngay dưới nút AI */}
+      {/* Dropdown gợi ý AI với multi-select và 2 nút hành động */}
       {data.activeSuggestion && data.activeSuggestion.length > 0 && (
         <div
           style={{
@@ -164,26 +192,65 @@ const CustomNodeComponent = ({ id, data }: NodeProps) => {
             background: "#fff",
             border: "1px solid #ddd",
             borderRadius: "3px",
-            zIndex: 1000,
+            zIndex: 9999, // đảm bảo luôn hiển thị trên cùng
+            padding: "4px",
           }}
         >
-          {data.activeSuggestion.map((suggestion: string, index: number) => (
-            <div
-              key={index}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (data.onSelectSuggestion) data.onSelectSuggestion(id, suggestion);
-              }}
+          {data.activeSuggestion.map((suggestion: string, index: number) => {
+            const isSelected = selectedSuggestions.includes(suggestion);
+            return (
+              <div
+                key={index}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleSelection(suggestion);
+                }}
+                style={{
+                  padding: "4px",
+                  cursor: "pointer",
+                  fontSize: "10px",
+                  borderBottom: "1px solid #eee",
+                  backgroundColor: isSelected ? "#e0e0e0" : "transparent",
+                }}
+              >
+                {suggestion}
+              </div>
+            );
+          })}
+          {/* Các nút hành động cho dropdown */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              marginTop: "4px",
+            }}
+          >
+            <button
+              onClick={handleCancel}
               style={{
-                padding: "4px",
-                cursor: "pointer",
-                fontSize: "10px",
-                borderBottom: "1px solid #eee",
+                ...buttonStyle,
+                backgroundColor: "#F44336",
+                color: "#fff",
+                flex: 1,
+                marginRight: "2px",
               }}
             >
-              {suggestion}
-            </div>
-          ))}
+              Hủy
+            </button>
+            <button
+              onClick={handleApply}
+              style={{
+                ...buttonStyle,
+                backgroundColor: "#4CAF50",
+                color: "#fff",
+                flex: 1,
+                marginLeft: "2px",
+              }}
+              disabled={selectedSuggestions.length === 0}
+            >
+              Áp dụng
+            </button>
+          </div>
         </div>
       )}
       <Handle type="target" position={Position.Left} style={{ background: "#555" }} />
@@ -197,12 +264,11 @@ const nodeTypes = { custom: CustomNodeComponent };
 const MindMapFlow = () => {
   const [nodes, setNodes] = useState<CustomNode[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
-  // activeSuggestions lưu thông tin của node hiện tại có dropdown gợi ý
+  // activeSuggestions lưu thông tin của node có dropdown gợi ý
   const [activeSuggestions, setActiveSuggestions] = useState<
     { nodeId: string; suggestions: string[] } | null
   >(null);
 
-  // Tham chiếu cho input file dùng để tải mind map
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Tính chuỗi branch từ node được chọn
@@ -217,7 +283,7 @@ const MindMapFlow = () => {
     return branch.join(" -> ");
   };
 
-  // Xây dựng cấu trúc mindmap dạng cây
+  // Xây dựng cấu trúc mind map dạng cây
   const buildMindMapString = (): string => {
     const buildTree = (node: CustomNode, indent: string): string => {
       let result = indent + node.data.label + "\n";
@@ -348,7 +414,7 @@ Now, generate the list of child nodes based on the branch: "${branch}".
       }
       console.log("Danh sách gợi ý:", suggestionList);
       if (suggestionList.length > 0) {
-        // Thay vì gọi prompt, hiển thị dropdown gợi ý cho node này
+        // Hiển thị dropdown gợi ý cho node này
         setActiveSuggestions({ nodeId, suggestions: suggestionList });
       }
     } catch (error) {
@@ -356,28 +422,33 @@ Now, generate the list of child nodes based on the branch: "${branch}".
     }
   };
 
-  // Hàm xử lý khi người dùng chọn gợi ý từ dropdown
-  const handleSelectSuggestionForNode = (nodeId: string, suggestion: string) => {
+  // Hàm xử lý khi áp dụng các gợi ý đã tích chọn
+  const handleApplySuggestionsForNode = (nodeId: string, suggestions: string[]) => {
     const parentNode = nodes.find((n) => n.id === nodeId);
     if (!parentNode) return;
-    const newId = Date.now().toString();
-    const newNode: CustomNode = {
-      id: newId,
-      type: "custom",
-      data: { label: suggestion, parentId: parentNode.id },
-      position: { x: 0, y: 0 },
-    };
-    const newNodes = recalcLayout([...nodes, newNode]);
-    setNodes(newNodes);
-    setEdges((prev) => [
-      ...prev,
-      { id: `${parentNode.id}-${newId}`, source: parentNode.id, target: newId },
-    ]);
-    // Sau khi chọn, xóa dropdown gợi ý
+    let newNodes = [...nodes];
+    let newEdges = [...edges];
+    suggestions.forEach((suggestion) => {
+      const newId = Date.now().toString() + Math.random().toString();
+      const newNode: CustomNode = {
+        id: newId,
+        type: "custom",
+        data: { label: suggestion, parentId: parentNode.id },
+        position: { x: 0, y: 0 },
+      };
+      newNodes.push(newNode);
+      newEdges.push({ id: `${parentNode.id}-${newId}`, source: parentNode.id, target: newId });
+    });
+    setNodes(recalcLayout(newNodes));
+    setEdges(newEdges);
     setActiveSuggestions(null);
   };
 
-  // Nếu mindmap rỗng, hiển thị nút "+" ở giữa màn hình để thêm node gốc
+  const handleCancelSuggestionsForNode = (nodeId: string) => {
+    setActiveSuggestions(null);
+  };
+
+  // Nếu mind map rỗng, hiển thị nút "+" ở giữa màn hình để thêm node gốc
   const handleAddRoot = () => {
     const label = window.prompt("Nhập nhãn cho node gốc:");
     if (!label) return;
@@ -432,7 +503,7 @@ Now, generate the list of child nodes based on the branch: "${branch}".
     reader.readAsText(file);
   };
 
-  // Thêm các hàm hành động vào data của node, và nếu node có gợi ý đang active thì truyền vào
+  // Thêm các hàm hành động vào data của node, đồng thời truyền activeSuggestion nếu có
   const enhancedNodes = nodes.map((n) => ({
     ...n,
     type: "custom",
@@ -442,7 +513,8 @@ Now, generate the list of child nodes based on the branch: "${branch}".
       onAdd: handleAddChildForNode,
       onDelete: handleDeleteNodeForNode,
       onSuggest: handleSuggestChildForNode,
-      onSelectSuggestion: handleSelectSuggestionForNode,
+      onApplySuggestions: handleApplySuggestionsForNode,
+      onCancelSuggestions: handleCancelSuggestionsForNode,
       activeSuggestion:
         activeSuggestions && activeSuggestions.nodeId === n.id
           ? activeSuggestions.suggestions
@@ -453,15 +525,48 @@ Now, generate the list of child nodes based on the branch: "${branch}".
   return (
     <div style={{ height: "100vh", position: "relative" }}>
       {/* Nút Lưu và Tải mind map */}
-      <div style={{ position: "absolute", top: "10px", right: "10px", zIndex: 1000, display: "flex", gap: "10px" }}>
-        <button onClick={handleSaveMindMap} style={{ padding: "6px 12px", borderRadius: "4px", border: "none", backgroundColor: "#007bff", color: "#fff" }}>
+      <div
+        style={{
+          position: "absolute",
+          top: "10px",
+          right: "10px",
+          zIndex: 1000,
+          display: "flex",
+          gap: "10px",
+        }}
+      >
+        <button
+          onClick={handleSaveMindMap}
+          style={{
+            padding: "6px 12px",
+            borderRadius: "4px",
+            border: "none",
+            backgroundColor: "#007bff",
+            color: "#fff",
+          }}
+        >
           Lưu
         </button>
-        <button onClick={handleLoadMindMap} style={{ padding: "6px 12px", borderRadius: "4px", border: "none", backgroundColor: "#28a745", color: "#fff" }}>
+        <button
+          onClick={handleLoadMindMap}
+          style={{
+            padding: "6px 12px",
+            borderRadius: "4px",
+            border: "none",
+            backgroundColor: "#28a745",
+            color: "#fff",
+          }}
+        >
           Tải
         </button>
         {/* Input file ẩn để tải mind map */}
-        <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileChange} style={{ display: "none" }} />
+        <input
+          type="file"
+          accept=".json"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          style={{ display: "none" }}
+        />
       </div>
       <ReactFlowProvider>
         <ReactFlow nodes={enhancedNodes} edges={edges} nodeTypes={nodeTypes} fitView>
